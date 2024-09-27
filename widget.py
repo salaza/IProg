@@ -3,8 +3,10 @@ import subprocess
 import os
 import glob
 import json
+import serial
+import time
 from PySide6.QtWidgets import QApplication, QWidget, QFileDialog
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence,QShortcut
 from ui_form import Ui_Widget
 
 class Widget(QWidget):
@@ -16,8 +18,9 @@ class Widget(QWidget):
         self.ui.setupUi(self)
 
         self.current_shortcut = None  # To store the current shortcut reference
+        self.counter_value = 0  # Initialize the counter
 
-        # Load saved paths and hotkey from configuration file
+        # Load saved paths, counter value, and hotkey from configuration file
         self.load_paths()
 
         # Only search for ipecmd automatically if the path is not already saved
@@ -38,6 +41,9 @@ class Widget(QWidget):
 
         # Set the initial visibility of the auto_label and enable/disable flash button based on the AutoFlash checkbox state
         self.toggle_auto_label_visibility(self.ui.AutoFlash.checkState())
+
+        # Set the counter display
+        self.ui.Counter.display(self.counter_value)
 
     def toggle_auto_label_visibility(self, state):
         """Toggle the visibility of auto_label based on the AutoFlash checkbox state and enable/disable flash button and hotkey."""
@@ -113,11 +119,37 @@ class Widget(QWidget):
             # Check if the programming was successful
             if result.returncode == 0:
                 self.ui.DebugWindow.append("Programming complete.")
+                self.update_counter()  # Increment and update the counter after successful flash
+                self.verify_firmware_via_com_port()  # Verify firmware through COM port
             else:
                 self.ui.DebugWindow.append("Programming failed.")
                 self.ui.DebugWindow.append(result.stderr)
         except Exception as e:
             self.ui.DebugWindow.append(f"Error running command: {str(e)}")
+
+    def verify_firmware_via_com_port(self):
+        """Connect to COM port 6 and check for the 'SW-Ver V2' readout to verify firmware upgrade."""
+        try:
+            with serial.Serial('COM6', 115200, timeout=5) as ser:  # Adjust baudrate if needed
+                self.ui.DebugWindow.append("Connected to COM6. Waiting for readout...")
+
+                start_time = time.time()
+                while time.time() - start_time < 10:  # 10-second timeout to read the response
+                    if ser.in_waiting > 0:
+                        line = ser.readline().decode('utf-8').strip()
+                        self.ui.DebugWindow.append(f"Read from COM6: {line}")
+                        if "SW-Ver V2" in line:
+                            self.ui.DebugWindow.append("Firmware verification successful!")
+                            return
+                self.ui.DebugWindow.append("Firmware verification failed. 'SW-Ver V2' not received.")
+        except serial.SerialException as e:
+            self.ui.DebugWindow.append(f"Error: Unable to connect to COM6 - {str(e)}")
+
+    def update_counter(self):
+        """Increment the counter by 1 and update the display and config."""
+        self.counter_value += 1
+        self.ui.Counter.display(self.counter_value)
+        self.save_paths()  # Save the updated counter value
 
     def browse_mcu_file(self):
         # Function to open file dialog for MCU Hex File
@@ -164,12 +196,13 @@ class Widget(QWidget):
             self.ui.DebugWindow.append("No valid hotkey set.")
 
     def save_paths(self):
-        """Save the MCU, Telit, and IPECMD paths, and hotkey to a JSON file."""
+        """Save the MCU, Telit, and IPECMD paths, hotkey, and counter to a JSON file."""
         paths = {
             "mcu_file": self.ui.MCUPathBox.text(),
             "telit_file": self.ui.TelitPathBox.text(),
             "ipecmd_file": self.ui.IPECMDPathBox.text(),
-            "hotkey": self.ui.SetFlashHotkey.keySequence().toString()  # Save the hotkey
+            "hotkey": self.ui.SetFlashHotkey.keySequence().toString(),  # Save the hotkey
+            "counter": self.counter_value  # Save the counter value
         }
         try:
             with open(self.CONFIG_FILE, 'w') as config_file:
@@ -178,7 +211,7 @@ class Widget(QWidget):
             self.ui.DebugWindow.append(f"Error saving paths: {str(e)}")
 
     def load_paths(self):
-        """Load the saved MCU, Telit, IPECMD paths, and hotkey from the JSON file."""
+        """Load the saved MCU, Telit, IPECMD paths, hotkey, and counter from the JSON file."""
         if not os.path.exists(self.CONFIG_FILE):
             # File doesn't exist, create it with default values
             self.save_default_paths()
@@ -197,6 +230,10 @@ class Widget(QWidget):
                         self.ui.SetFlashHotkey.setKeySequence(QKeySequence(hotkey))
                         self.set_hotkey()  # Apply the hotkey after loading it
                         self.ui.DebugWindow.append(f"Hotkey loaded: {hotkey}")
+
+                    # Load the counter value if available
+                    self.counter_value = paths.get("counter", 0)
+                    self.ui.Counter.display(self.counter_value)
             except Exception as e:
                 self.ui.DebugWindow.append(f"Error loading paths: {str(e)}")
 
@@ -206,7 +243,8 @@ class Widget(QWidget):
             "mcu_file": "",
             "telit_file": "",
             "ipecmd_file": "",
-            "hotkey": ""
+            "hotkey": "",
+            "counter": 0
         }
         try:
             with open(self.CONFIG_FILE, 'w') as config_file:
@@ -219,5 +257,6 @@ class Widget(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = Widget()
+    widget.setWindowTitle("IRepell Programmer")  # Set a custom window title
     widget.show()
     sys.exit(app.exec())

@@ -23,7 +23,7 @@
     </rect>
    </property>
    <property name="currentIndex">
-    <number>0</number>
+    <number>1</number>
    </property>
    <widget class="QWidget" name="MainTab">
     <attribute name="title">
@@ -59,7 +59,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
       </rect>
      </property>
      <property name="text">
-      <string>Debug Fenster</string>
+      <string>Ausgabe</string>
      </property>
     </widget>
     <widget class="QLCDNumber" name="Counter">
@@ -119,9 +119,9 @@ li.checked::marker { content: &quot;\2612&quot;; }
      </property>
      <property name="geometry">
       <rect>
-       <x>160</x>
+       <x>140</x>
        <y>20</y>
-       <width>161</width>
+       <width>201</width>
        <height>16</height>
       </rect>
      </property>
@@ -168,7 +168,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
       <rect>
        <x>20</x>
        <y>30</y>
-       <width>291</width>
+       <width>361</width>
        <height>22</height>
       </rect>
      </property>
@@ -183,7 +183,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>120</y>
+       <y>240</y>
        <width>281</width>
        <height>24</height>
       </rect>
@@ -199,7 +199,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>100</y>
+       <y>220</y>
        <width>161</width>
        <height>16</height>
       </rect>
@@ -212,7 +212,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>190</y>
+       <y>310</y>
        <width>101</width>
        <height>21</height>
       </rect>
@@ -237,7 +237,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>170</y>
+       <y>290</y>
        <width>161</width>
        <height>16</height>
       </rect>
@@ -250,7 +250,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>260</y>
+       <y>380</y>
        <width>281</width>
        <height>24</height>
       </rect>
@@ -260,7 +260,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>240</y>
+       <y>360</y>
        <width>161</width>
        <height>16</height>
       </rect>
@@ -273,7 +273,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>320</x>
-       <y>260</y>
+       <y>380</y>
        <width>80</width>
        <height>24</height>
       </rect>
@@ -286,7 +286,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>330</y>
+       <y>450</y>
        <width>281</width>
        <height>24</height>
       </rect>
@@ -296,7 +296,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>320</x>
-       <y>330</y>
+       <y>450</y>
        <width>80</width>
        <height>24</height>
       </rect>
@@ -309,7 +309,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>310</y>
+       <y>430</y>
        <width>161</width>
        <height>16</height>
       </rect>
@@ -322,7 +322,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>320</x>
-       <y>400</y>
+       <y>520</y>
        <width>80</width>
        <height>24</height>
       </rect>
@@ -335,7 +335,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>400</y>
+       <y>520</y>
        <width>281</width>
        <height>24</height>
       </rect>
@@ -345,7 +345,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <property name="geometry">
       <rect>
        <x>20</x>
-       <y>380</y>
+       <y>500</y>
        <width>161</width>
        <height>16</height>
       </rect>
@@ -362,7 +362,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
       <rect>
        <x>20</x>
        <y>60</y>
-       <width>291</width>
+       <width>321</width>
        <height>22</height>
       </rect>
      </property>
@@ -374,6 +374,28 @@ li.checked::marker { content: &quot;\2612&quot;; }
      </property>
      <property name="checked">
       <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QCheckBox" name="FullMCUOutput">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>90</y>
+       <width>291</width>
+       <height>22</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Voller Output von der MCU</string>
+     </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
      </property>
     </widget>
    </widget>
