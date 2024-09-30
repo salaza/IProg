@@ -1,6 +1,6 @@
 {
     "mcu_file": "//edsy-sv1/Produktion/IRepell/Software/firmware/atmel/iRepell1_HW1_CPY1_VRY1_APP_V0002.hex",
-    "telit_file": "",
+    "telit_file": "C:/Users/Admin/Desktop/Tools/IRepell_FlashTool/firmware/telit/s2w.bin",
     "ipecmd_file": "C:/Program Files/Microchip/MPLABX/v6.20/mplab_platform/mplab_ipe/ipecmd.exe",
     "hotkey": "S",
     "counter": 0

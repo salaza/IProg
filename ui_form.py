@@ -15,19 +15,21 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGraphicsView,
-    QKeySequenceEdit, QLCDNumber, QLabel, QLineEdit,
-    QProgressBar, QPushButton, QSizePolicy, QTabWidget,
-    QTextBrowser, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QKeySequenceEdit,
+    QLCDNumber, QLabel, QLineEdit, QProgressBar,
+    QPushButton, QSizePolicy, QTabWidget, QTextBrowser,
+    QWidget)
 
 class Ui_Widget(object):
     def setupUi(self, Widget):
         if not Widget.objectName():
             Widget.setObjectName(u"Widget")
         Widget.resize(800, 600)
+        Widget.setAutoFillBackground(True)
         self.tabWidget = QTabWidget(Widget)
         self.tabWidget.setObjectName(u"tabWidget")
         self.tabWidget.setGeometry(QRect(0, -1, 801, 601))
+        self.tabWidget.setAutoFillBackground(True)
         self.MainTab = QWidget()
         self.MainTab.setObjectName(u"MainTab")
         self.DebugWindow = QTextBrowser(self.MainTab)
@@ -45,21 +47,19 @@ class Ui_Widget(object):
         self.FlashButton = QPushButton(self.MainTab)
         self.FlashButton.setObjectName(u"FlashButton")
         self.FlashButton.setEnabled(True)
-        self.FlashButton.setGeometry(QRect(130, 40, 221, 51))
+        self.FlashButton.setGeometry(QRect(132, 49, 251, 51))
         self.FlashButton.setMouseTracking(False)
         self.FlashButton.setCheckable(False)
         self.FlashButton.setFlat(False)
         self.auto_label = QLabel(self.MainTab)
         self.auto_label.setObjectName(u"auto_label")
         self.auto_label.setEnabled(True)
-        self.auto_label.setGeometry(QRect(140, 20, 201, 16))
-        self.StatusGraphic = QGraphicsView(self.MainTab)
-        self.StatusGraphic.setObjectName(u"StatusGraphic")
-        self.StatusGraphic.setGeometry(QRect(130, 150, 221, 201))
+        self.auto_label.setGeometry(QRect(160, 22, 191, 20))
         self.FlashProgress = QProgressBar(self.MainTab)
         self.FlashProgress.setObjectName(u"FlashProgress")
-        self.FlashProgress.setGeometry(QRect(130, 110, 221, 23))
+        self.FlashProgress.setGeometry(QRect(140, 130, 251, 31))
         self.FlashProgress.setValue(0)
+        self.FlashProgress.setOrientation(Qt.Orientation.Horizontal)
         self.FlashProgress.setInvertedAppearance(False)
         self.tabWidget.addTab(self.MainTab, "")
         self.SettingsTab = QWidget()
@@ -125,11 +125,23 @@ class Ui_Widget(object):
         self.FullMCUOutput.setGeometry(QRect(20, 90, 291, 22))
         self.FullMCUOutput.setCheckable(True)
         self.FullMCUOutput.setChecked(False)
+        self.IPECMDOutput = QCheckBox(self.SettingsTab)
+        self.IPECMDOutput.setObjectName(u"IPECMDOutput")
+        self.IPECMDOutput.setEnabled(True)
+        self.IPECMDOutput.setGeometry(QRect(20, 120, 291, 22))
+        self.IPECMDOutput.setCheckable(True)
+        self.IPECMDOutput.setChecked(False)
+        self.TelitImageOutput = QCheckBox(self.SettingsTab)
+        self.TelitImageOutput.setObjectName(u"TelitImageOutput")
+        self.TelitImageOutput.setEnabled(True)
+        self.TelitImageOutput.setGeometry(QRect(20, 150, 291, 22))
+        self.TelitImageOutput.setCheckable(True)
+        self.TelitImageOutput.setChecked(False)
         self.tabWidget.addTab(self.SettingsTab, "")
 
         self.retranslateUi(Widget)
 
-        self.tabWidget.setCurrentIndex(1)
+        self.tabWidget.setCurrentIndex(0)
         self.FlashButton.setDefault(True)
 
 
@@ -148,8 +160,8 @@ class Ui_Widget(object):
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>", None))
         self.label_2.setText(QCoreApplication.translate("Widget", u"Ausgabe", None))
         self.label_3.setText(QCoreApplication.translate("Widget", u"Z\u00e4hler", None))
-        self.FlashButton.setText(QCoreApplication.translate("Widget", u"Programmieren", None))
-        self.auto_label.setText(QCoreApplication.translate("Widget", u"Wird automatisch  ausgef\u00fchrt", None))
+        self.FlashButton.setText(QCoreApplication.translate("Widget", u"Start", None))
+        self.auto_label.setText(QCoreApplication.translate("Widget", u"Wird automatisch ausgef\u00fchrt", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.MainTab), QCoreApplication.translate("Widget", u"Flashing", None))
         self.AutoFlash.setText(QCoreApplication.translate("Widget", u"Automatisches Flashing beim einlegen der Platine", None))
         self.label.setText(QCoreApplication.translate("Widget", u"Hotkey f\u00fcr Flashing", None))
@@ -165,7 +177,9 @@ class Ui_Widget(object):
         self.BrowserIPECMD.setText(QCoreApplication.translate("Widget", u"Durchsuchen", None))
         self.IPECMDPath.setText(QCoreApplication.translate("Widget", u"IPECMD Pfad", None))
         self.ClearDebug.setText(QCoreApplication.translate("Widget", u"L\u00f6schen des Output Fensters vor jedem Flash", None))
-        self.FullMCUOutput.setText(QCoreApplication.translate("Widget", u"Voller Output von der MCU", None))
+        self.FullMCUOutput.setText(QCoreApplication.translate("Widget", u"Output von der MCU", None))
+        self.IPECMDOutput.setText(QCoreApplication.translate("Widget", u"Output von IPECMD", None))
+        self.TelitImageOutput.setText(QCoreApplication.translate("Widget", u"Output vom Telit Image Tool", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.SettingsTab), QCoreApplication.translate("Widget", u"Einstellungen", None))
     # retranslateUi
 

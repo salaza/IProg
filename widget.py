@@ -1,13 +1,53 @@
 import sys
-import subprocess
 import os
 import glob
 import json
 import serial
 import time
+import shutil
 from PySide6.QtWidgets import QApplication, QWidget, QFileDialog
-from PySide6.QtGui import QKeySequence,QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QProcess, QTimer, QThread, Signal
 from ui_form import Ui_Widget
+
+# Create a new thread class for handling firmware verification via COM port
+class FirmwareVerificationThread(QThread):
+    verification_complete = Signal(bool)  # Signal to notify when verification is complete
+    verification_output = Signal(str)     # Signal to emit data read from the serial port
+
+    def __init__(self, port='COM6', baudrate=115200, timeout=20):
+        super().__init__()
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.running = False  # Control flag for stopping the thread if needed
+
+    def run(self):
+        """Override the run method to execute the serial verification in a separate thread."""
+        self.running = True
+        try:
+            with serial.Serial(self.port, self.baudrate, timeout=self.timeout) as ser:
+                ser.write(b'iRc0001DF\r\n')
+                start_time = time.time()
+                self.verification_output.emit("Command sent to MCU.")
+                while self.running and time.time() - start_time < 30:  # 30-second timeout
+                    if ser.in_waiting > 0:
+                        line = ser.readline().decode('utf-8').strip()
+                        self.verification_output.emit(f"Read from COM6: {line}")
+                        if "SW-VER: V2" in line:
+                            self.verification_output.emit("Firmware verification successful!")
+                            self.verification_complete.emit(True)
+                            self.stop()
+                            return
+                self.verification_output.emit("Firmware verification failed. 'SW-VER: V2' not received.")
+                self.verification_complete.emit(False)
+        except serial.SerialException as e:
+            self.verification_output.emit(f"Error: Unable to connect to COM6 - {str(e)}")
+            self.verification_complete.emit(False)
+
+    def stop(self):
+        """Stop the verification thread."""
+        self.running = False
 
 class Widget(QWidget):
     CONFIG_FILE = "config.json"  # Path to save/load the file paths
@@ -19,6 +59,24 @@ class Widget(QWidget):
 
         self.current_shortcut = None  # To store the current shortcut reference
         self.counter_value = 0  # Initialize the counter
+
+        # QProcesses for asynchronous command execution
+        self.flash_process = QProcess(self)
+        self.telit_process = QProcess(self)
+        self.verification_thread = None  # Initialize the firmware verification thread as None
+
+        # Connect signals to the respective slots for QProcesses
+        self.flash_process.readyReadStandardOutput.connect(self.read_flash_output)
+        self.flash_process.readyReadStandardError.connect(self.read_flash_error)
+        self.flash_process.finished.connect(self.flash_finished)
+
+        self.telit_process.readyReadStandardOutput.connect(self.read_telit_output)
+        self.telit_process.readyReadStandardError.connect(self.read_telit_error)
+        self.telit_process.finished.connect(self.telit_finished)
+
+        # Initialize progress bar settings
+        self.current_step = 0
+        self.total_steps = 0
 
         # Load saved paths, counter value, and hotkey from configuration file
         self.load_paths()
@@ -45,6 +103,12 @@ class Widget(QWidget):
         # Set the counter display
         self.ui.Counter.display(self.counter_value)
 
+    def update_progress(self, step_increment=1):
+        """Update the progress bar by incrementing the step count."""
+        self.current_step += step_increment
+        progress_value = int((self.current_step / self.total_steps) * 100)
+        self.ui.FlashProgress.setValue(progress_value)
+
     def toggle_auto_label_visibility(self, state):
         """Toggle the visibility of auto_label based on the AutoFlash checkbox state and enable/disable flash button and hotkey."""
         if state == 2:  # Checked
@@ -67,13 +131,13 @@ class Widget(QWidget):
             # Automatically found the path, set it in the UI and save
             ipecmd_path = ipecmd_path[0]  # Use the first match found
             self.ui.IPECMDPathBox.setText(ipecmd_path)
-            self.ui.DebugWindow.append(f"ipecmd.exe found at: {ipecmd_path}")
             self.save_paths()  # Save the automatically found path
         else:
             # If not found, prompt the user to manually select the path
             self.ui.DebugWindow.append("ipecmd.exe not found. Please select it manually.")
 
     def flash_button_clicked(self):
+
         # Check if the ClearDebug checkbox is checked
         if self.ui.ClearDebug.isChecked():
             # If checked, clear the debug window before starting the flashing process
@@ -82,97 +146,221 @@ class Widget(QWidget):
         # Get the paths from the UI fields
         ipecmd_path = self.ui.IPECMDPathBox.text()
         hex_file_path = self.ui.MCUPathBox.text()
+        telit_file_path = self.ui.TelitPathBox.text()
         flash_option = self.ui.FlashChooser.currentText()  # Get the current selection in the FlashChooser
 
         if not ipecmd_path:
             self.ui.DebugWindow.append("Error: IPECMD path not set!")
             return
 
+        # Save the current file paths
+        self.save_paths()
+
+        # Initialize progress bar
+        self.current_step = 0
+        if flash_option == "Beide":
+            self.total_steps = 8
+        elif flash_option == "Nur MCU":
+            self.total_steps = 2
+        elif flash_option == "Nur Telit":
+            self.total_steps = 6
+
+        self.update_progress()  # Start with initial value of 0
+
+        # Execute the appropriate sequence based on the selection in FlashChooser
+        if flash_option == "Beide":
+            # Flash MCU, verify, send command, and flash Telit module
+            self.flash_mcu(ipecmd_path, hex_file_path)
+        elif flash_option == "Nur MCU":
+            # Flash only the MCU and verify
+            self.flash_mcu(ipecmd_path, hex_file_path)
+        elif flash_option == "Nur Telit":
+            # Send the serial command and flash the Telit module
+            self.send_serial_command()
+
+    def flash_mcu(self, ipecmd_path, hex_file_path):
+        """Flash the MCU using IPECMD."""
         if not hex_file_path:
             self.ui.DebugWindow.append("Error: No hex file selected!")
             return
 
-        # Check if the selected option allows flashing the MCU
-        if flash_option not in ["Beide", "Nur MCU"]:
-            self.ui.DebugWindow.append("MCU flashing not selected.")
-            return
-
-        # Save the current file paths
-        self.save_paths()
-
-        # Construct the IPECMD command
+        # Construct the IPECMD command for MCU flashing
         command = [
-            ipecmd_path,
-            '-TATATMELICE',  # Using Atmel-ICE
-            '-PATSAME70N19B',
-            f'-F{hex_file_path}',
-            '-M',
-            '-V',
-            '-C',
-            '-OL'
+                ipecmd_path,
+                '-TPAICE',  # Use Atmel-ICE programmer
+                '-PATSAME70N19B',  # Target device
+                '-M',  # Start programming
+                f'-F{hex_file_path}'  # MCU Hex file
         ]
 
-        # Run the command using subprocess
+        if self.ui.IPECMDOutput.isChecked():
+            command_str = ' '.join(command)
+            self.ui.DebugWindow.append(f"Executing command: {command_str}")
+
+        self.ui.DebugWindow.append("Starting MCU flashing...")
+        # Remove all folders starting with "WE310_" before starting the flash process
+        self.remove_we310_folders()
+
+        # Start the command using QProcess
+        self.flash_process.start(command[0], command[1:])
+
+    def remove_we310_folders(self):
+        """Remove all folders starting with 'WE310_' in the current directory."""
+        current_directory = os.getcwd()  # Get the current working directory
+        #self.ui.DebugWindow.append(f"Searching for folders starting with 'WE310_' in {current_directory}...")
+
+        # Iterate through all files and directories in the current directory
+        for item in os.listdir(current_directory):
+            item_path = os.path.join(current_directory, item)
+            # Check if the item is a directory and its name starts with 'WE310_'
+            if os.path.isdir(item_path) and item.startswith("WE310_"):
+                try:
+                    # Remove the directory and its contents
+                    shutil.rmtree(item_path)
+                    self.ui.DebugWindow.append(f"Removed folder: {item_path}")
+                except Exception as e:
+                    self.ui.DebugWindow.append(f"Error removing folder {item_path}: {str(e)}")
+
+
+    def read_flash_output(self):
+        """Read standard output from the flash process."""
+        if self.ui.IPECMDOutput.isChecked():
+            output = self.flash_process.readAllStandardOutput().data().decode()
+            self.ui.DebugWindow.append(output)
+
+    def read_flash_error(self):
+        """Read error output from the flash process."""
+        if self.ui.IPECMDOutput.isChecked():
+            error = self.flash_process.readAllStandardError().data().decode()
+            self.ui.DebugWindow.append(error)
+
+    def flash_finished(self, exit_code, exit_status):
+        """Handle the flash finished signal."""
+        if exit_code == 0:
+            self.ui.DebugWindow.append("MCU Flash complete.")
+            self.update_counter()  # Increment and update the counter after successful flash
+            self.update_progress()  # Step: MCU Flash complete
+            QTimer.singleShot(5000, self.send_serial_command)
+            #self.start_firmware_verification()
+        elif exit_code == 36:
+            self.ui.DebugWindow.append("Programming failed: INVALID_CMDLINE_ARG (Code 36).")
+        else:
+            self.ui.DebugWindow.append(f"Programming failed with exit code {exit_code}.")
+
+    def start_firmware_verification(self):
+        """Start the firmware verification process using the verification thread."""
+        self.verification_thread = FirmwareVerificationThread()
+        self.verification_thread.verification_complete.connect(self.on_verification_complete)
+        self.verification_thread.verification_output.connect(self.ui.DebugWindow.append)
+        self.verification_thread.start()
+
+    def on_verification_complete(self, success):
+        """Handle the firmware verification completion."""
+        self.update_progress()  # Step: Firmware Verification Complete
+        if success:
+            self.send_serial_command()
+        else:
+            self.ui.DebugWindow.append("Firmware verification failed. Flashing process halted.")
+
+    def send_serial_command(self):
+        """Send a serial command to the MCU and flash the Telit module if successful."""
+        self.ui.DebugWindow.append("Sending serial command to MCU...")
+
         try:
-            result = subprocess.run(command, capture_output=True, text=True)
+            with serial.Serial('COM6', 115200, timeout=5) as ser:
+                ser.write(b'iRc0001DF\r\n')
+                self.ui.DebugWindow.append("Serial command sent.")
+                self.update_progress()  # Step: Serial command sent
 
-            # Check if the programming was successful
-            if result.returncode == 0:
-                self.ui.DebugWindow.append("Programming complete.")
-                self.update_counter()  # Increment and update the counter after successful flash
-                self.verify_firmware_via_com_port()  # Verify firmware through COM port
-            else:
-                self.ui.DebugWindow.append("Programming failed.")
-                self.ui.DebugWindow.append(result.stderr)
-        except Exception as e:
-            self.ui.DebugWindow.append(f"Error running command: {str(e)}")
-
-    def verify_firmware_via_com_port(self):
-        """Connect to COM port 6 and check for the 'SW-Ver V2' readout to verify firmware upgrade."""
-        try:
-            with serial.Serial('COM6', 115200, timeout=5) as ser:  # Adjust baudrate if needed
-                self.ui.DebugWindow.append("Connected to COM6. Waiting for readout...")
-
-                start_time = time.time()
-                while time.time() - start_time < 10:  # 10-second timeout to read the response
-                    if ser.in_waiting > 0:
-                        line = ser.readline().decode('utf-8').strip()
-                        self.ui.DebugWindow.append(f"Read from COM6: {line}")
-                        if "SW-Ver V2" in line:
-                            self.ui.DebugWindow.append("Firmware verification successful!")
-                            return
-                self.ui.DebugWindow.append("Firmware verification failed. 'SW-Ver V2' not received.")
+                # Start a QTimer to delay the Telit flashing by 1 second
+                QTimer.singleShot(1000, self.flash_telit)
         except serial.SerialException as e:
-            self.ui.DebugWindow.append(f"Error: Unable to connect to COM6 - {str(e)}")
+            self.ui.DebugWindow.append(f"Error: Unable to send serial command - {str(e)}")
+
+    def flash_telit(self):
+        """Flash the Telit module using Telit_Wifi_Image_Tool.exe."""
+        telit_tool = "Telit_Wifi_Image_Tool.exe"
+        telit_file_path = self.ui.TelitPathBox.text()
+
+        if not telit_file_path:
+            self.ui.DebugWindow.append("Error: No Telit firmware file selected.")
+            return
+
+        # Construct the Telit command
+        command = [
+            telit_tool,
+            "-m", "WE310",
+            "-d", telit_file_path,
+            "-c", "COM7"
+        ]
+
+        self.ui.DebugWindow.append("Starting Telit flashing...")
+
+        # Start the command using QProcess
+        self.telit_process.start(command[0], command[1:])
+
+    def read_telit_output(self):
+        """Read standard output from the Telit flashing process."""
+        output = self.telit_process.readAllStandardOutput().data().decode()
+        # Update progress based on specific messages received
+        if "Flashing Image 1 of 4" in output:
+            self.ui.DebugWindow.append("Flashing Image 1 of 4")
+            self.update_progress()
+        elif "Flashing Image 2 of 4" in output:
+            self.ui.DebugWindow.append("Flashing Image 2 of 4")
+            self.update_progress()
+        elif "Flashing Image 3 of 4" in output:
+            self.ui.DebugWindow.append("Flashing Image 3 of 4")
+            self.update_progress()
+        elif "Flashing Image 4 of 4" in output:
+            self.ui.DebugWindow.append("Flashing Image 4 of 4")
+            self.update_progress()
+
+        if self.ui.TelitImageOutput.isChecked():
+            self.ui.DebugWindow.append(output)
+
+
+    def read_telit_error(self):
+        """Read error output from the Telit flashing process."""
+        if self.ui.TelitImageOutput.isChecked():
+            error = self.telit_process.readAllStandardError().data().decode()
+            self.ui.DebugWindow.append(error)
+
+    def telit_finished(self, exit_code, exit_status):
+        """Handle the Telit flashing finished signal."""
+        if exit_code == 0:
+            self.ui.DebugWindow.append("Telit module flashed successfully.")
+        else:
+            self.ui.DebugWindow.append(f"Telit flashing failed with exit code {exit_code}.")
 
     def update_counter(self):
+
+        flash_option = self.ui.FlashChooser.currentText()
         """Increment the counter by 1 and update the display and config."""
-        self.counter_value += 1
-        self.ui.Counter.display(self.counter_value)
-        self.save_paths()  # Save the updated counter value
+        if flash_option == "Beide":
+            self.counter_value += 1
+            self.ui.Counter.display(self.counter_value)
+            self.save_paths()  # Save the updated counter value
 
     def browse_mcu_file(self):
-        # Function to open file dialog for MCU Hex File
+        """Open file dialog for MCU Hex File."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Select MCU Hex File", "", "HEX Files (*.hex);;All Files (*)")
         if file_path:
             self.ui.MCUPathBox.setText(file_path)
-            # Save paths automatically when the file is selected
             self.save_paths()
 
     def browse_telit_file(self):
-        # Function to open file dialog for Telit Bin File
+        """Open file dialog for Telit Bin File."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Telit Bin File", "", "Bin Files (*.bin);;All Files (*)")
         if file_path:
             self.ui.TelitPathBox.setText(file_path)
-            # Save paths automatically when the file is selected
             self.save_paths()
 
     def browse_ipecmd(self):
-        # Function to open file dialog for IPECMD path
+        """Open file dialog for IPECMD path."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Select IPECMD", "", "Executable Files (*.exe);;All Files (*)")
         if file_path:
             self.ui.IPECMDPathBox.setText(file_path)
-            # Save paths automatically when the file is selected
             self.save_paths()
 
     def set_hotkey(self):
@@ -181,8 +369,8 @@ class Widget(QWidget):
         if key_sequence:
             # Remove old shortcut if it exists
             if self.current_shortcut:
-                self.current_shortcut.activated.disconnect()  # Disconnect the previous action
-                del self.current_shortcut  # Delete the reference to the old shortcut
+                self.current_shortcut.activated.disconnect()
+                del self.current_shortcut
 
             # Set a new shortcut
             self.current_shortcut = QShortcut(QKeySequence(key_sequence), self)
@@ -190,8 +378,7 @@ class Widget(QWidget):
 
             # Save the hotkey in config
             self.save_paths()
-
-            self.ui.DebugWindow.append(f"Hotkey set to: {key_sequence}")
+            #self.ui.DebugWindow.append(f"Hotkey set to: {key_sequence}")
         else:
             self.ui.DebugWindow.append("No valid hotkey set.")
 
@@ -201,8 +388,8 @@ class Widget(QWidget):
             "mcu_file": self.ui.MCUPathBox.text(),
             "telit_file": self.ui.TelitPathBox.text(),
             "ipecmd_file": self.ui.IPECMDPathBox.text(),
-            "hotkey": self.ui.SetFlashHotkey.keySequence().toString(),  # Save the hotkey
-            "counter": self.counter_value  # Save the counter value
+            "hotkey": self.ui.SetFlashHotkey.keySequence().toString(),
+            "counter": self.counter_value
         }
         try:
             with open(self.CONFIG_FILE, 'w') as config_file:
@@ -213,25 +400,18 @@ class Widget(QWidget):
     def load_paths(self):
         """Load the saved MCU, Telit, IPECMD paths, hotkey, and counter from the JSON file."""
         if not os.path.exists(self.CONFIG_FILE):
-            # File doesn't exist, create it with default values
             self.save_default_paths()
         else:
-            # Load the existing file
             try:
                 with open(self.CONFIG_FILE, 'r') as config_file:
                     paths = json.load(config_file)
                     self.ui.MCUPathBox.setText(paths.get("mcu_file", ""))
                     self.ui.TelitPathBox.setText(paths.get("telit_file", ""))
                     self.ui.IPECMDPathBox.setText(paths.get("ipecmd_file", ""))
-
-                    # Load and set the hotkey if available
                     hotkey = paths.get("hotkey", "")
                     if hotkey:
                         self.ui.SetFlashHotkey.setKeySequence(QKeySequence(hotkey))
-                        self.set_hotkey()  # Apply the hotkey after loading it
-                        self.ui.DebugWindow.append(f"Hotkey loaded: {hotkey}")
-
-                    # Load the counter value if available
+                        self.set_hotkey()
                     self.counter_value = paths.get("counter", 0)
                     self.ui.Counter.display(self.counter_value)
             except Exception as e:
@@ -248,8 +428,7 @@ class Widget(QWidget):
         }
         try:
             with open(self.CONFIG_FILE, 'w') as config_file:
-                json.dump(default_paths, config_file, indent=4)  # Pretty formatting with indent
-            self.ui.DebugWindow.append("Default configuration created.")
+                json.dump(default_paths, config_file, indent=4)
         except Exception as e:
             self.ui.DebugWindow.append(f"Error creating default config: {str(e)}")
 
